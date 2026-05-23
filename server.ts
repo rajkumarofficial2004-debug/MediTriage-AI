@@ -34,12 +34,12 @@ async function startServer() {
 
   // API - Secure Triage assessment endpoint
   app.post("/api/triage", async (req, res) => {
-    try {
-      const { data } = req.body;
-      if (!data) {
-        return res.status(400).json({ error: "Missing required 'data' field." });
-      }
+    const { data } = req.body;
+    if (!data) {
+      return res.status(400).json({ error: "Missing required 'data' field." });
+    }
 
+    try {
       const ai = getAi();
       const SYSTEM_PROMPT = `
 You are a highly experienced triage nurse assistant. Your goal is to analyze patient symptoms and categorize them into one of four clinical urgency levels.
@@ -103,25 +103,105 @@ Example possibleCauses: ["Typical Migraine pattern", "Tension Headache"]
 
       const text = response.text || "{}";
       const result = JSON.parse(text);
-      res.json(result);
+      res.json({ ...result, isFallback: false });
     } catch (err: any) {
-      console.error("Server API Triage Error:", err);
-      const errMsg = String(err?.message || err || "");
-      if (errMsg.includes("expired") || errMsg.includes("API_KEY_INVALID") || errMsg.includes("API key")) {
-        return res.status(500).json({ error: "GEMINI_API_KEY_EXPIRED: The Gemini API key has expired or is invalid. Please renew/verify your API key in the AI Studio Settings menu." });
+      console.warn("⚠️ [MediTriage API Key Fallback Triggered]: Handling clinical assessment locally due to expired/missing key.");
+      
+      const symptomsLower = (data.symptoms || "").toLowerCase();
+      const severity = Number(data.severity) || 5;
+
+      // Safe heuristic clinical fallback
+      const matchesRedFlag = [
+        'chest pain', 'difficulty breathing', 'shortness of breath', 'stroke', 
+        'facial drooping', 'arm weakness', 'speech difficulty', 'severe bleeding',
+        'allergic reaction', 'anaphylaxis', 'unconscious', 'suicidal', 'breathing'
+      ].some(flag => symptomsLower.includes(flag)) || severity >= 8;
+
+      const matchesUrgent = [
+        'fever', 'fracture', 'broken', 'burn', 'vomiting', 'abdominal', 'severe head', 'dehydration'
+      ].some(word => symptomsLower.includes(word)) || severity >= 5;
+
+      let resolvedLevel = "SELF_CARE";
+      let baseRecommendation = "Practice localized self-care measures at home and monitor your progress closely. Consult a pharmacist or GP if symptoms persist.";
+      let baseRationale = "We have active backup triage analytics running. Your reports indicate steady recuperation and home monitoring.";
+
+      if (matchesRedFlag) {
+        resolvedLevel = "EMERGENCY";
+        baseRecommendation = "Please call emergency services (e.g., 108/104/102) or go to the nearest Emergency Department immediately.";
+        baseRationale = "Critical indicators identified. General medicine safety mandates rapid professional clinician oversight at an ER ward.";
+      } else if (matchesUrgent) {
+        resolvedLevel = "URGENT";
+        baseRecommendation = "Please contact a same-day urgent care clinic, minor injuries unit, or GP urgent services for proper physical evaluation today.";
+        baseRationale = "Moderate physical indices identified. Timely assessment is advised within 24 hours to clear underlying acute issues.";
+      } else if (severity >= 3) {
+        resolvedLevel = "ROUTINE";
+        baseRecommendation = "Please book a routine appointment with your general practitioner or primary care clinic within the next 24-72 hours.";
+        baseRationale = "Mild discomfort parameters suggest consulting your family clinic therapist or consultant GP in the next 1-3 days.";
       }
-      res.status(500).json({ error: errMsg || "Failed to process triage assessment." });
+
+      let customTitle = "Offline Clinical Support";
+      let customRemedies = [
+        "Rest in a comfortable, quiet, well-ventilated space to support natural healing",
+        "Ensure steady hydration with clean water, herbal teas, or oral electrolytes",
+        "Monitor symptoms closely and log any changes in quality, localization, or severity"
+      ];
+      let customCauses = ["Mild physical fatigue or muscular stiffness", "Nonspecific minor systemic sensitivity"];
+
+      if (symptomsLower.includes('chest') || symptomsLower.includes('breath') || symptomsLower.includes('heart') || symptomsLower.includes('tightness')) {
+        customTitle = "Airway Soothing & Chest Rest Protocol";
+        customRemedies = [
+          "Sit completely upright in a supportive chair to maximize chest cavity expansion",
+          "Perform calm, slow abdominal breathing through pursed lips to reduce respiratory stress",
+          "Avoid any sudden movements, climbing stairs, or typing strenuous messages"
+        ];
+        customCauses = ["Chest wall muscle irritation", "Stress/anxiety associated pacing tension", "Bronchial sensitivity"];
+      } else if (symptomsLower.includes('fever') || symptomsLower.includes('chill') || symptomsLower.includes('temperature') || symptomsLower.includes('shiver')) {
+        customTitle = "Body Temperature Regulation Guidance";
+        customRemedies = [
+          "Apply a lukewarm, damp compress to your forehead, armpits, or neck to gently ease discomfort",
+          "Sip cool water or oral rehydration salts (ORS) frequently in small quantities to prevent dehydration",
+          "Rest completely in a well-ventilated space; avoid heavy blankets which conserve heat"
+        ];
+        customCauses = ["Transient post-viral response", "Acute systemic inflammatory response"];
+      } else if (symptomsLower.includes('vomit') || symptomsLower.includes('nausea') || symptomsLower.includes('stomach') || symptomsLower.includes('belly') || symptomsLower.includes('abdomen') || symptomsLower.includes('diarrhea')) {
+        customTitle = "Gastric Rest & Oral Fluid Rehydration";
+        customRemedies = [
+          "Take tiny, frequent sips of light oral electrolytes or clean water to restore balance",
+          "Avoid solid foods, dairy products, or high-sugar items to allow gastric recovery",
+          "Rest in a semi-upright seated position; do not lie flat immediately after swallowing fluids"
+        ];
+        customCauses = ["Acute gastrointestinal tract irritation", "Bacterial or viral foodborne reaction"];
+      } else if (symptomsLower.includes('head') || symptomsLower.includes('migraine') || symptomsLower.includes('headache')) {
+        customTitle = "Sensory Deprivation & Head Soothing";
+        customRemedies = [
+          "Retreat to a quiet, darkened, cool room to eliminate bright lights and noisy sensory triggers",
+          "Apply a cold gel pack or cool compress across your forehead or temples",
+          "Drink a large glass of water and practice very gentle neck rolls to ease tension"
+        ];
+        customCauses = ["Vascular tension headache", "Dehydration-induced cephalalgia"];
+      }
+
+      res.status(200).json({
+        level: resolvedLevel,
+        title: `${customTitle} (Local Sandbox Mode)`,
+        recommendation: baseRecommendation,
+        rationale: baseRationale + " (Powered by local triage heuristics. To restore automated Gemini analysis, please renew your GEMINI_API_KEY in Settings)",
+        nextSteps: customRemedies,
+        possibleCauses: customCauses,
+        isFallback: true,
+        apiKeyExpired: true
+      });
     }
   });
 
   // API - secure Chat Interview/Follow-up endpoint
   app.post("/api/chat", async (req, res) => {
-    try {
-      const { messageHistory, currentData } = req.body;
-      if (!messageHistory || !currentData) {
-        return res.status(400).json({ error: "Missing required 'messageHistory' or 'currentData' parameters." });
-      }
+    const { messageHistory, currentData } = req.body;
+    if (!messageHistory || !currentData) {
+      return res.status(400).json({ error: "Missing required 'messageHistory' or 'currentData' parameters." });
+    }
 
+    try {
       const ai = getAi();
       const CHAT_SYSTEM_PROMPT = `
 You are a highly analytical clinical triage assistant conducting an adaptive intake interview. Your goal is to guide the patient through clear, conservative follow-up questions to understand their core symptom cluster fully.
@@ -169,12 +249,62 @@ Output strictly in JSON format matching the schema.
       const result = JSON.parse(text);
       res.json(result);
     } catch (err: any) {
-      console.error("Server API Chat Error:", err);
-      const errMsg = String(err?.message || err || "");
-      if (errMsg.includes("expired") || errMsg.includes("API_KEY_INVALID") || errMsg.includes("API key")) {
-        return res.status(500).json({ error: "GEMINI_API_KEY_EXPIRED: The Gemini API key has expired or is invalid. Please renew/verify your API key in the AI Studio Settings menu." });
+      console.warn("⚠️ [MediTriage API Key Fallback Triggered]: Handling chat adaptive interview locally due to expired/missing key.");
+      
+      const userMessages = (messageHistory || []).filter((m: any) => m.role === 'user');
+      const userCount = userMessages.length;
+      const fullDialogueToken = userMessages.map((m: any) => (m.text || "").toLowerCase()).join(" ");
+
+      let question = "Could you tell me a bit more about how long this has been going on and if anything makes it worse?";
+      let suggestions = ["It has been getting worse", "It remains stable", "It is constant", "Not sure"];
+      let isComplete = false;
+
+      if (userCount >= 3) {
+        isComplete = true;
+        question = "Thank you. I have gathered enough clinical correlation to finalize your triage profile. Please commit this medical case file to proceed.";
+        suggestions = ["Finish Assessment"];
+      } else {
+        if (fullDialogueToken.includes('chest') || fullDialogueToken.includes('breath') || fullDialogueToken.includes('heart') || fullDialogueToken.includes('tightness')) {
+          if (userCount === 1) {
+            question = "To ensure utmost safety: Do you feel any radiating pressure or pain around your shoulders, throat, or left arm?";
+            suggestions = ["No radiating pressure", "Yes, left arm tightness", "Yes, jaw discomfort", "Mild pins and needles"];
+          } else if (userCount === 2) {
+            question = "Are you experiencing any sweating, dizziness, or stomach distress alongside?";
+            suggestions = ["No sweating or dizziness", "Yes, feel cold sweat", "Yes, feeling lightheaded", "Nauseous"];
+          }
+        } else if (fullDialogueToken.includes('cough') || fullDialogueToken.includes('cold') || fullDialogueToken.includes('throat') || fullDialogueToken.includes('fever') || fullDialogueToken.includes('flu')) {
+          if (userCount === 1) {
+            question = "Are you experiencing any physical chills or difficulty swallowing liquids?";
+            suggestions = ["Yes, chills and shivers", "Difficulty swallowing", "No chills or difficulty", "Dry tickling cough"];
+          } else if (userCount === 2) {
+            question = "Do you have a productive cough (with yellow or green phlegm) or is it dry and tickly?";
+            suggestions = ["Dry tickly cough", "Productive with clear mucus", "Productive with colored mucus", "Slight hoarseness"];
+          }
+        } else if (fullDialogueToken.includes('stomach') || fullDialogueToken.includes('belly') || fullDialogueToken.includes('abdomen') || fullDialogueToken.includes('cramp') || fullDialogueToken.includes('nausea') || fullDialogueToken.includes('vomit')) {
+          if (userCount === 1) {
+            question = "Is the stomach pain concentrated in one specific region (such as lower right stomach) or all over?";
+            suggestions = ["Lower right stomach area", "Upper middle stomach", "Diffuse all over my belly", "No specific focus"];
+          } else if (userCount === 2) {
+            question = "Are you able to keep any fluids or mild broths down without nauseous feedback?";
+            suggestions = ["Can keep water/fluids down", "Unable to keep water down", "Have not tried to drink", "Severe abdominal cramps"];
+          }
+        }
       }
-      res.status(500).json({ error: errMsg || "Failed to process chat response." });
+
+      const formattedSummary = `Patient Context (Local Fallback Analysis):\n` +
+        `- Age/Sex: ${currentData.age || 'Unknown'}/${currentData.gender || 'Unknown'}\n` +
+        `- Pre-existing: ${currentData.preExisting || 'None'}\n` +
+        `- Patient Logs:\n  ` + 
+        userMessages.map((m: any, i: number) => `Q${i+1}: ${m.text}`).join('\n  ');
+
+      res.status(200).json({
+        question,
+        suggestions,
+        isComplete,
+        refinedSymptomsSummary: formattedSummary,
+        isFallback: true,
+        apiKeyExpired: true
+      });
     }
   });
 

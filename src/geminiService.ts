@@ -22,9 +22,14 @@ export async function getTriageAssessment(data: AssessmentData): Promise<TriageR
     }
 
     const result = await res.json();
-    return { ...(result as TriageResult), isFallback: false };
-  } catch (error) {
-    console.error("Triage AI Error:", error);
+    return { ...(result as TriageResult), isFallback: result.isFallback || false };
+  } catch (error: any) {
+    const errorMsg = String(error?.message || error || "");
+    if (errorMsg.includes("expired") || errorMsg.includes("API key") || errorMsg.includes("API_KEY")) {
+      console.warn("⚠️ [Triage AI Client Key Warning]: Operating under clinical safety backups:", errorMsg);
+    } else {
+      console.error("Triage AI Error:", error);
+    }
     
     // Smart heuristic analyzer for patient safety, home remedies, and precautions
     const symptomsLower = (data.symptoms || "").toLowerCase();
@@ -238,8 +243,13 @@ export async function getAdaptiveFollowUp(
 
     const result = await res.json();
     return result as AdaptiveQuestionResult;
-  } catch (error) {
-    console.error("Adaptive interview error:", error);
+  } catch (error: any) {
+    const errorMsg = String(error?.message || error || "");
+    if (errorMsg.includes("expired") || errorMsg.includes("API key") || errorMsg.includes("API_KEY")) {
+      console.warn("⚠️ [Adaptive Client Warning]: Key expired, falling back to local clinical interview tree:", errorMsg);
+    } else {
+      console.error("Adaptive interview error:", error);
+    }
     
     // Fallback: Smart local dialogue follow-up engine
     const userMessages = messageHistory.filter(m => m.role === 'user');
