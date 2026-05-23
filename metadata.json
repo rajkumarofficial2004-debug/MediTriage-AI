@@ -1,0 +1,6 @@
+{
+  "name": "MedTriage AI",
+  "description": "A secure pre-clinical triage tool with Google authentication and persistent history. Provides urgency guidance, potential patterns with medical disclaimers, and next-step recommendations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

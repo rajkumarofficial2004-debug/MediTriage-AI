@@ -1,0 +1,60 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "email", "createdAt"]
+    },
+    "Assessment": {
+      "title": "Assessment",
+      "description": "Historical triage assessment record.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "data": {
+          "type": "object",
+          "properties": {
+            "age": { "type": "string" },
+            "gender": { "type": "string" },
+            "symptoms": { "type": "string" },
+            "duration": { "type": "string" },
+            "severity": { "type": "integer" },
+            "preExisting": { "type": "string" }
+          }
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "level": { "type": "string" },
+            "title": { "type": "string" },
+            "recommendation": { "type": "string" },
+            "rationale": { "type": "string" },
+            "nextSteps": { "type": "array", "items": { "type": "string" } },
+            "possibleCauses": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "accessCode": { "type": "string" }
+      },
+      "required": ["userId", "data", "result", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles restricted to owner."
+    },
+    "/assessments/{assessmentId}": {
+      "schema": "Assessment",
+      "description": "Historical assessments for a user."
+    }
+  }
+}

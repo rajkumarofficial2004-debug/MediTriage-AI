@@ -1,0 +1,46 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Auth helpers
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function isOwnerByData() { return isSignedIn() && request.resource.data.userId == request.auth.uid; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function isEmailVerified() { return request.auth.token.email_verified == true; }
+
+    // Validation helpers
+    function isValidUser(data) {
+      return data.keys().hasAll(['userId', 'email', 'createdAt']) &&
+             data.userId == request.auth.uid &&
+             data.email is string;
+    }
+
+    function isValidAssessment(data) {
+      return data.keys().hasAll(['userId', 'data', 'result', 'createdAt']) &&
+             data.userId == request.auth.uid &&
+             data.data is map &&
+             data.result is map &&
+             data.data.keys().hasAll(['age', 'symptoms', 'severity']) &&
+             data.result.keys().hasAll(['level']);
+    }
+
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.createdAt == request.time;
+      allow update: if isOwner(userId) && isValidUser(request.resource.data) && 
+                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photoURL']);
+    }
+
+    match /assessments/{assessmentId} {
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isOwnerByData() && isValidAssessment(request.resource.data) && request.resource.data.createdAt == request.time;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+  }
+}

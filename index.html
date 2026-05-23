@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MedTriage AI | Clinical Symptom Assessment</title>
+    <script>
+      // Instantly suppress benign Vite HMR websocket connection errors in sandbox
+      (function() {
+        const isBenign = (err) => {
+          if (!err) return true;
+          try {
+            const str = typeof err === 'object' ? JSON.stringify(err) : String(err);
+            if (
+              /websocket/i.test(str) ||
+              /vite/i.test(str) ||
+              /ws:\/\/|wss:\/\//i.test(str) ||
+              /closed without opened/i.test(str) ||
+              /hmr/i.test(str)
+            ) {
+              return true;
+            }
+          } catch (e) {}
+          const msg = String(err.message || err.reason || err.description || err || '');
+          const stack = String(err.stack || '');
+          return (
+            msg.includes('WebSocket') ||
+            msg.includes('vite') ||
+            msg.includes('ws://') ||
+            msg.includes('wss://') ||
+            msg.includes('closed without opened') ||
+            stack.includes('vite') ||
+            stack.includes('hmr')
+          );
+        };
+        window.addEventListener('unhandledrejection', function(e) {
+          if (isBenign(e.reason)) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        }, true);
+        window.addEventListener('error', function(e) {
+          if (isBenign(e.message) || isBenign(e.error) || isBenign(e)) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        }, true);
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
